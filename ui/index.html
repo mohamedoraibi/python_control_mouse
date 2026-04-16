@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HandMouse</title>
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: { 50:'#f8fafc', 100:'#f1f5f9', 200:'#e2e8f0', 300:'#cbd5e1',
+              400:'#94a3b8', 500:'#64748b', 600:'#475569', 700:'#334155',
+              800:'#1e293b', 900:'#0f172a', 950:'#080e1a' },
+            brand: { 400:'#38bdf8', 500:'#0ea5e9', 600:'#0284c7' },
+            success: { 400:'#4ade80', 500:'#22c55e' },
+            warn: { 400:'#facc15', 500:'#eab308' },
+            danger: { 400:'#f87171', 500:'#ef4444' },
+          },
+          fontFamily: {
+            sans: ['Inter','system-ui','sans-serif'],
+            mono: ['JetBrains Mono','monospace'],
+          },
+          animation: {
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4,0,0.6,1) infinite',
+            'ping-slow': 'ping 2s cubic-bezier(0,0,0.2,1) infinite',
+            'fade-in': 'fadeIn 0.4s ease-out',
+            'slide-in': 'slideIn 0.3s ease-out',
+          },
+          keyframes: {
+            fadeIn: { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+            slideIn: { from: { opacity: '0', transform: 'translateX(12px)' }, to: { opacity: '1', transform: 'translateX(0)' } },
+          },
+          backdropBlur: { xs: '2px' },
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+    .camera-feed {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 12px;
+      transform: scaleX(-1);
+      display: block;
+    }
+
+    .glow-green  { box-shadow: 0 0 20px 2px rgba(34,197,94,0.25); }
+    .glow-blue   { box-shadow: 0 0 20px 2px rgba(14,165,233,0.25); }
+    .glow-red    { box-shadow: 0 0 20px 2px rgba(239,68,68,0.2);  }
+
+    .slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      background: linear-gradient(to right, #0ea5e9 0%, #0ea5e9 var(--val,50%), #1e293b var(--val,50%), #1e293b 100%);
+    }
+    .slider-thumb::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #0ea5e9;
+      border: 2px solid #fff;
+      box-shadow: 0 0 8px rgba(14,165,233,0.6);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+    .slider-thumb::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+    .toggle-switch {
+      position: relative; width: 52px; height: 28px;
+      background: #1e293b; border: 1.5px solid #334155;
+      border-radius: 14px; cursor: pointer;
+      transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
+    }
+    .toggle-switch.active {
+      background: #0ea5e9;
+      border-color: #38bdf8;
+      box-shadow: 0 0 12px rgba(14,165,233,0.5);
+    }
+    .toggle-switch::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 20px; height: 20px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .toggle-switch.active::after { transform: translateX(24px); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: rgba(30,41,59,0.7);
+      border: 1px solid rgba(51,65,85,0.6);
+      border-radius: 12px;
+      backdrop-filter: blur(8px);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .hand-icon-path { stroke-dasharray: 200; stroke-dashoffset: 200; }
+    .hand-icon-path.animated { animation: draw 1s ease forwards; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+
+    .fps-bar { transition: width 0.5s ease; }
+
+    @keyframes breathe {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .searching { animation: breathe 1.5s ease-in-out infinite; }
+
+    .no-camera-msg { display: flex; align-items: center; justify-content: center; height: 100%; flex-direction: column; gap: 12px; color: #475569; }
+  </style>
+</head>
+<body class="bg-surface-950 text-surface-100 font-sans select-none h-full">
+
+<!-- ═══ APP SHELL ═══ -->
+<div class="flex flex-col h-full">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-6 py-3 border-b border-surface-800 bg-surface-950/80 backdrop-blur-sm shrink-0">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-lg bg-brand-600 flex items-center justify-center shadow-lg" style="box-shadow:0 0 14px rgba(14,165,233,0.4)">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/>
+          <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/>
+          <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/>
+          <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-sm font-semibold leading-none text-white">HandMouse</h1>
+        <p class="text-xs text-surface-500 mt-0.5">Camera-based cursor control</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <div id="header-status" class="badge bg-surface-800 text-surface-400 border border-surface-700">
+        <span id="header-dot" class="status-dot bg-surface-600"></span>
+        <span id="header-label">Standby</span>
+      </div>
+      <div class="flex items-center gap-2 text-xs text-surface-500">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l-4 4l6 6l4-16l-18 7l4 2l2 6l3-4"/></svg>
+        <span id="fps-label">0 fps</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <div class="flex flex-1 overflow-hidden gap-0">
+
+    <!-- Camera Panel -->
+    <div class="flex-1 flex flex-col p-5 min-w-0">
+      <div id="camera-container" class="relative flex-1 rounded-xl overflow-hidden bg-surface-900 border border-surface-800 transition-all duration-500">
+        <!-- Camera feed -->
+        <img id="camera-feed" class="camera-feed" alt="" style="display:none;" />
+
+        <!-- No camera placeholder -->
+        <div id="no-camera" class="no-camera-msg">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#334155" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+          </svg>
+          <p class="text-sm">Connecting to camera…</p>
+        </div>
+
+        <!-- Click pulse overlay -->
+        <div id="click-pulse" class="absolute inset-0 pointer-events-none rounded-xl border-2 border-success-400 opacity-0 transition-opacity duration-100" style="box-shadow: inset 0 0 30px rgba(74,222,128,0.15);"></div>
+
+        <!-- Top status bar on feed -->
+        <div class="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none">
+          <div id="detection-badge" class="badge bg-surface-900/80 text-surface-400 border border-surface-700 backdrop-blur-sm searching">
+            <span id="detect-dot" class="status-dot bg-surface-600"></span>
+            <span id="detect-label">Initializing</span>
+          </div>
+          <div id="click-badge" class="badge bg-success-500/20 text-success-400 border border-success-500/30 backdrop-blur-sm opacity-0 transition-opacity duration-150">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+            Click
+          </div>
+        </div>
+
+        <!-- Crosshair overlay when tracking -->
+        <div id="crosshair" class="absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-300" style="display:flex; align-items:center; justify-content:center;">
+          <svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="rgba(14,165,233,0.3)" stroke-width="1.5">
+            <circle cx="20" cy="20" r="18"/>
+            <line x1="20" y1="2" x2="20" y2="10"/>
+            <line x1="20" y1="30" x2="20" y2="38"/>
+            <line x1="2" y1="20" x2="10" y2="20"/>
+            <line x1="30" y1="20" x2="38" y2="20"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Bottom hint bar -->
+      <div class="mt-3 flex items-center justify-between text-xs text-surface-500">
+        <span>Point your index finger toward the camera to control the cursor</span>
+        <div class="flex items-center gap-4">
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-brand-500 inline-block"></span>Index tip = cursor
+          </span>
+          <span class="flex items-center gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-success-500 inline-block"></span>Pinch = click
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Panel -->
+    <div class="w-80 flex flex-col gap-4 p-5 overflow-y-auto border-l border-surface-800 shrink-0 animate-slide-in">
+
+      <!-- Main Toggle -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-1">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Tracking</h2>
+            <p id="tracking-sub" class="text-xs text-surface-500 mt-0.5">Click to activate</p>
+          </div>
+          <div id="toggle" class="toggle-switch" onclick="handleToggle()"></div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-surface-700 grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-0.5">
+            <span class="text-xs text-surface-500">Mouse X</span>
+            <span id="mouse-x" class="font-mono text-sm font-medium text-white">—</span>
+          </div>
+          <div class="flex flex-col gap-0.5">
+            <span class="text-xs text-surface-500">Mouse Y</span>
+            <span id="mouse-y" class="font-mono text-sm font-medium text-white">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sensitivity -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            <span class="text-sm font-semibold text-white">Sensitivity</span>
+          </div>
+          <span id="sensitivity-val" class="font-mono text-xs text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded">1.5×</span>
+        </div>
+        <input id="sensitivity-slider" type="range" min="0.5" max="3.0" step="0.1" value="1.5"
+          class="slider-thumb" oninput="handleSensitivity(this.value)" style="--val:50%" />
+        <div class="flex justify-between text-xs text-surface-600 mt-1.5">
+          <span>Slow</span><span>Fast</span>
+        </div>
+      </div>
+
+      <!-- Smoothing -->
+      <div class="card p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12c2-4 4-6 6-6s4 6 6 6 4-6 6-6"/></svg>
+            <span class="text-sm font-semibold text-white">Smoothing</span>
+          </div>
+          <span id="smoothing-val" class="font-mono text-xs text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded">55%</span>
+        </div>
+        <input id="smoothing-slider" type="range" min="0" max="0.95" step="0.05" value="0.55"
+          class="slider-thumb" oninput="handleSmoothing(this.value)" style="--val:57%" />
+        <div class="flex justify-between text-xs text-surface-600 mt-1.5">
+          <span>Raw</span><span>Smooth</span>
+        </div>
+      </div>
+
+      <!-- Live Stats -->
+      <div class="card p-5">
+        <h3 class="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-3">Live Stats</h3>
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-surface-500">Frame rate</span>
+            <div class="flex items-center gap-2">
+              <div class="w-20 h-1.5 bg-surface-700 rounded-full overflow-hidden">
+                <div id="fps-bar" class="fps-bar h-full bg-brand-500 rounded-full" style="width:0%"></div>
+              </div>
+              <span id="fps-stat" class="font-mono text-xs text-white w-12 text-right">—</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-surface-500">Hand detected</span>
+            <div id="hand-stat" class="badge bg-surface-800 text-surface-400 border border-surface-700">
+              <span class="status-dot bg-surface-600" id="hand-stat-dot"></span>No
+            </div>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-surface-500">Gesture</span>
+            <span id="gesture-stat" class="font-mono text-xs text-surface-400">idle</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-surface-500">Pinch dist</span>
+            <span id="pinch-stat" class="font-mono text-xs text-surface-400">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Gesture Guide -->
+      <div class="card p-5">
+        <h3 class="text-xs font-semibold text-surface-400 uppercase tracking-wider mb-3">Gesture Guide</h3>
+        <div class="space-y-2.5">
+          <div class="flex items-start gap-3 p-3 rounded-lg bg-surface-900/60 border border-surface-800">
+            <div class="w-7 h-7 rounded-lg bg-brand-600/20 flex items-center justify-center shrink-0 mt-0.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-surface-200">Move cursor</p>
+              <p class="text-xs text-surface-500 mt-0.5">Point your index finger — cursor follows its tip</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg bg-surface-900/60 border border-surface-800">
+            <div class="w-7 h-7 rounded-lg bg-success-500/20 flex items-center justify-center shrink-0 mt-0.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><polyline points="9 12 11 14 15 10"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-surface-200">Click / Drag</p>
+              <p class="text-xs text-surface-500 mt-0.5">Pinch thumb &amp; index finger together to click or hold to drag</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3 p-3 rounded-lg bg-surface-900/60 border border-surface-800">
+            <div class="w-7 h-7 rounded-lg bg-warn-500/20 flex items-center justify-center shrink-0 mt-0.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </div>
+            <div>
+              <p class="text-xs font-semibold text-surface-200">Best results</p>
+              <p class="text-xs text-surface-500 mt-0.5">Good lighting, keep hand 40–60 cm from camera</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  let bridge = null;
+  let isTracking = false;
+  let lastFrameTime = 0;
+
+  // Initialize WebChannel
+  new QWebChannel(qt.webChannelTransport, (ch) => {
+    bridge = ch.objects.bridge;
+    bridge.frameUpdated.connect(onFrame);
+    bridge.statusUpdated.connect(onStatus);
+    updateSliderGradient(document.getElementById('sensitivity-slider'));
+    updateSliderGradient(document.getElementById('smoothing-slider'));
+  });
+
+  function onFrame(b64) {
+    const img = document.getElementById('camera-feed');
+    const noCamera = document.getElementById('no-camera');
+    img.src = 'data:image/jpeg;base64,' + b64;
+    if (img.style.display === 'none') {
+      img.style.display = 'block';
+      noCamera.style.display = 'none';
+    }
+  }
+
+  function onStatus(raw) {
+    const s = JSON.parse(raw);
+
+    // FPS
+    const fps = s.fps || 0;
+    const fpsBar = document.getElementById('fps-bar');
+    const fpsPct = Math.min(100, (fps / 30) * 100);
+    fpsBar.style.width = fpsPct + '%';
+    fpsBar.style.background = fps > 20 ? '#22c55e' : fps > 10 ? '#eab308' : '#ef4444';
+    document.getElementById('fps-label').textContent = fps + ' fps';
+    document.getElementById('fps-stat').textContent = fps + ' fps';
+
+    // Mouse position
+    document.getElementById('mouse-x').textContent = s.mouse_x ?? '—';
+    document.getElementById('mouse-y').textContent = s.mouse_y ?? '—';
+
+    // Hand detection
+    const handDetected = s.hand_detected;
+    const trackingActive = s.tracking_active;
+    const clicking = s.clicking;
+
+    // Detection badge on feed
+    const detectBadge = document.getElementById('detection-badge');
+    const detectDot = document.getElementById('detect-dot');
+    const detectLabel = document.getElementById('detect-label');
+
+    if (!trackingActive) {
+      detectBadge.className = 'badge bg-surface-900/80 text-surface-500 border border-surface-700 backdrop-blur-sm';
+      detectDot.style.background = '#475569';
+      detectLabel.textContent = 'Paused';
+      detectBadge.classList.remove('searching');
+    } else if (handDetected) {
+      detectBadge.className = 'badge bg-success-500/20 text-success-400 border border-success-500/30 backdrop-blur-sm';
+      detectDot.style.background = '#22c55e';
+      detectLabel.textContent = 'Hand Detected';
+      detectBadge.classList.remove('searching');
+    } else {
+      detectBadge.className = 'badge bg-surface-900/80 text-brand-400 border border-brand-500/30 backdrop-blur-sm searching';
+      detectDot.style.background = '#0ea5e9';
+      detectLabel.textContent = 'Searching…';
+    }
+
+    // Click badge + pulse
+    const clickBadge = document.getElementById('click-badge');
+    const clickPulse = document.getElementById('click-pulse');
+    if (clicking) {
+      clickBadge.style.opacity = '1';
+      clickPulse.style.opacity = '1';
+    } else {
+      clickBadge.style.opacity = '0';
+      clickPulse.style.opacity = '0';
+    }
+
+    // Camera container glow
+    const container = document.getElementById('camera-container');
+    if (trackingActive && handDetected) {
+      container.className = container.className.replace(/glow-\w+/g, '');
+      if (!container.classList.contains('glow-green')) container.classList.add('glow-green');
+    } else if (trackingActive) {
+      container.className = container.className.replace(/glow-\w+/g, '');
+      if (!container.classList.contains('glow-blue')) container.classList.add('glow-blue');
+    } else {
+      container.className = container.className.replace(/glow-\w+/g, '');
+    }
+
+    // Header status
+    const headerDot = document.getElementById('header-dot');
+    const headerLabel = document.getElementById('header-label');
+    const headerStatus = document.getElementById('header-status');
+    if (!trackingActive) {
+      headerStatus.className = 'badge bg-surface-800 text-surface-400 border border-surface-700';
+      headerDot.style.background = '#475569';
+      headerLabel.textContent = 'Standby';
+    } else if (handDetected) {
+      headerStatus.className = 'badge bg-success-500/15 text-success-400 border border-success-500/30';
+      headerDot.style.background = '#22c55e';
+      headerLabel.textContent = 'Tracking';
+    } else {
+      headerStatus.className = 'badge bg-brand-500/15 text-brand-400 border border-brand-500/30';
+      headerDot.style.background = '#0ea5e9';
+      headerLabel.textContent = 'Searching';
+    }
+
+    // Hand stat
+    const handStatDot = document.getElementById('hand-stat-dot');
+    const handStat = document.getElementById('hand-stat');
+    if (handDetected) {
+      handStat.className = 'badge bg-success-500/15 text-success-400 border border-success-500/30';
+      handStatDot.style.background = '#22c55e';
+      handStat.querySelector('span').nextSibling.textContent = 'Yes';
+    } else {
+      handStat.className = 'badge bg-surface-800 text-surface-400 border border-surface-700';
+      handStatDot.style.background = '#475569';
+      handStat.querySelector('span').nextSibling.textContent = 'No';
+    }
+
+    // Gesture stat
+    document.getElementById('gesture-stat').textContent = clicking ? 'pinch (click)' : (handDetected ? 'open hand' : 'none');
+    document.getElementById('pinch-stat').textContent = s.pinch_dist > 0 ? s.pinch_dist + ' px' : '—';
+  }
+
+  function handleToggle() {
+    if (!bridge) return;
+    isTracking = !isTracking;
+    const toggle = document.getElementById('toggle');
+    const sub = document.getElementById('tracking-sub');
+    const crosshair = document.getElementById('crosshair');
+
+    if (isTracking) {
+      toggle.classList.add('active');
+      sub.textContent = 'Tracking active';
+      crosshair.style.opacity = '0.7';
+      bridge.start();
+    } else {
+      toggle.classList.remove('active');
+      sub.textContent = 'Click to activate';
+      crosshair.style.opacity = '0';
+      bridge.stop();
+    }
+  }
+
+  function handleSensitivity(val) {
+    const slider = document.getElementById('sensitivity-slider');
+    const min = parseFloat(slider.min), max = parseFloat(slider.max);
+    const pct = ((val - min) / (max - min) * 100).toFixed(1);
+    slider.style.setProperty('--val', pct + '%');
+    document.getElementById('sensitivity-val').textContent = parseFloat(val).toFixed(1) + '×';
+    if (bridge) bridge.setSensitivity(parseFloat(val));
+  }
+
+  function handleSmoothing(val) {
+    const slider = document.getElementById('smoothing-slider');
+    const min = parseFloat(slider.min), max = parseFloat(slider.max);
+    const pct = ((val - min) / (max - min) * 100).toFixed(1);
+    slider.style.setProperty('--val', pct + '%');
+    document.getElementById('smoothing-val').textContent = Math.round(val * 100) + '%';
+    if (bridge) bridge.setSmoothing(parseFloat(val));
+  }
+
+  function updateSliderGradient(slider) {
+    const min = parseFloat(slider.min), max = parseFloat(slider.max), val = parseFloat(slider.value);
+    const pct = ((val - min) / (max - min) * 100).toFixed(1);
+    slider.style.setProperty('--val', pct + '%');
+  }
+
+  // Keyboard shortcut: Space = toggle
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); handleToggle(); }
+  });
+</script>
+</body>
+</html>
